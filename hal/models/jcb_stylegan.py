@@ -1,19 +1,23 @@
 import os
 import torch
 import sys
+import ray
 
 from torchvision import utils as tutils
 from tqdm import tqdm
 
-import hal.io_utils
+import hal_project.hal.io_utils as io_utils
+import hal_project.hal as hal
 
-class RosArgStylegan:
+from hal_project.third_party.jcbrouwer_maua_stylegan2.models.stylegan2 import Generator as SG2Generator
+
+@hal.actor
+@ray.remote
+class JCBStyleGan:
 
   def __init__(self):
     
-    sys.path.append('/home/peddy_google_com/hal/old')
-    from models.stylegan2 import Generator as SG2Generator
-
+    # sys.path.append('/home/peddy_google_com/hal/old')
     _ckpt = "/home/peddy_google_com/data/abstract_art_000280.pt"
     self.n_mlp = 8
     self.latent_dim = 512
@@ -29,8 +33,8 @@ class RosArgStylegan:
     pass
 
   def train(self, dataset, finetune=True):
-    assert isinstance(dataset, VideoDataset)
-    
+    pass
+    # assert isinstance(dataset, VideoDataset)
 
   def project(self, image):
     pass
@@ -42,7 +46,7 @@ class RosArgStylegan:
       with torch.no_grad():
         mean_latent = self.g_ema.mean_latent(truncation_mean)
 
-    gen_dir = hal.io_utils.next_dir(self.gen_dir)
+    gen_dir = io_utils.next_dir(self.gen_dir)
     with torch.no_grad():
       self.g_ema.eval()
       sample_paths = []

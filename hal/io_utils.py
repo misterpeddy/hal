@@ -1,0 +1,21 @@
+import os
+
+def next_dir(root):
+  """Creates root if not exists; Creates n+1st numbered directory within it."""
+  assert root is not None
+  if not os.path.exists(root):
+    print(f'"{root}" does not exist - creating.')
+    os.makedirs(root)
+  existing_dirs = os.listdir(root)
+  existing_dirs = list(filter(lambda d: d.isnumeric(), existing_dirs))
+  existing_max = max(int(f) for f in existing_dirs) if len(existing_dirs) > 0 else -1
+  new_dir = os.path.join(root, str(existing_max + 1))
+  os.mkdir(new_dir)
+  return new_dir
+
+def name_from_path(path):
+  """Returns filename w/o extension from path."""
+  basename = os.path.basename(path)
+  if '.' in basename:
+    basename = basename.split('.')[0]
+  return basename
