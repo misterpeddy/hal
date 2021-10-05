@@ -3,8 +3,14 @@ import math
 import matplotlib.pyplot as plt
 import subprocess
 import gc
+import inspect
 import torch
 import os
+
+from IPython.display import HTML
+from IPython.display import display as Idisplay
+
+from base64 import b64encode
 
 import hal_project.hal as hal
 from hal_project.hal import io_utils
@@ -36,14 +42,16 @@ def show(o):
     o = ray.get(o)
   # TODO: change this to isinstance(o, (hal.audio.Track)) once interaction
   # with autoreload is fixed.
-  if str(type(o)) == "<class 'hal.audio.Track'>":
+  if str(type(o)) == "<class 'hal_project.hal.audio.audio.Track'>":
     return _show_track(o)
-  if str(type(o)) == "<class 'hal.audio.Audio'>":
+  if str(type(o)) == "<class 'hal_project.hal.audio.audio.Audio'>":
     return _show_audio(o)
   if isinstance(o, list):
     return _show_list(o)
   if isinstance(o, dict):
     return _show_dict(o)
+  if isinstance(o, str) and o.endswith('.mp4'):
+    return _show_mp4(o)
   else:
     raise NotImplementedError('Cannot call .show() on object of type {}'.format(type(o)))
 
@@ -95,3 +103,17 @@ def _show_dict(d):
     print(k)
     assert isinstance(d[k], list)
     _show_list(d[k])
+
+def _show_mp4(v):
+  """ Plays a locally stored small mp4 video file."""
+  mp4 = open(v,'rb').read()
+  data_url = "data:video/mp4;base64," + b64encode(mp4).decode()
+  Idisplay(HTML("""
+  <video width=400 controls>
+        <source src="%s" type="video/mp4">
+  </video>
+  """ % data_url))
+
+
+def _show_image(image_tensor):
+  pass

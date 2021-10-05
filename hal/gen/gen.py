@@ -14,53 +14,81 @@ import scipy
 import scipy.signal as signal
 import sklearn.cluster
 import torch as torch
-import torch.nn.functional as F
 
-from hal_project.hal import analyzers
+from hal_project.hal.audio import analyzers
+from hal_project.hal import io_utils 
 
-SMF = 1
+FRAME_RATE = 24
 
 class Scene:
-  def __init__(self, generator, track):
-    self.generator = generator
+  def __init__(self, model, track):
+    self.model = model
     self.track = track
-    self.n_frames = track.audio.shape[0]
-    low_onsets = analyzers.onsets(track, fmax=150)
-    high_onsets = analyzers.onsets(track, fmin=500)
-    self.latents = get_latents(generator, track, low_onsets, high_onsets)
-    self.noise = get_noise(generator, low_onsets, high_onsets)
+    self.n_frames = FRAME_RATE * int(track.audio.shape[0] / track.sr)
+    self.latents = self.get_latents(model, track)
+    self.noise = self.get_noise(model, track)
 
   def render(self):
     return _render(self)
 
-def get_latents(generator, track, low_onsets, high_onsets):
-  chroma = analyzers.chroma(track)
-  note_latents = generator.generate_latents(12)
-  chroma_latents = chroma_weight_latents(chroma, note_latents)
-  latents = gaussian_filter(chroma_latents, 4)
+  def get_latents(self, model, track):
+    note_latents = model._generate_latents(12).cpu()
+    chroma = analyzers.chroma(track)
+    chroma_latents = chroma_weight_latents(chroma, note_latents)
 
-  latents = high_onsets * note_latents[[-4]] + (1 - high_onsets) * latents
-  latents = low_onsets * note_latents[[-7]] + (1 - low_onsets) * latents
+    self.note_latents = note_latents
+    self.chroma = chroma
+    self.chroma_latents = chroma_latents
+    
+    latents = analyzers.gaussian_filter(chroma_latents, 4)
 
-  latents = gaussian_filter(latents, 2, causal=0.2)
+    high_onsets = track._high_onsets[:, None, None]
+    low_onsets = track._low_onsets[:, None, None]
 
-  return latents
+    latents = (high_onsets * note_latents[[-4]]) + ((1 - high_onsets) * latents)
+    latents = low_onsets * note_latents[[-7]] + (1 - low_onsets) * latents
 
-def get_noise(generator, low_onsets, high_onsets):
-  noise = []
-  range_min, range_max, exponent = generator.get_noise_range()
-  for scale in range(range_min, range_max):
-    h = 2 ** exponent(scale)
-    w = 2 ** exponent(scale)
+    latents = analyzers.gaussian_filter(latents, 2, causal=0.2)
 
-    noise.append(get_noise_at_scale(height=h, width=w, scale=scale - range_min, num_scales=range_max - range_min, onsets_list=[low_onsets, high_onsets], n_frames=n_frames))
+    return latents
 
-    if noise[-1] is not None:
+  def get_noise(self, generator, track, amplification=4):
+    
+    low_onsets = track._low_onsets.cuda()[:, None, None, None]
+    high_onsets = track._high_onsets.cuda()[:, None, None, None]
+    assert low_onsets.shape[0] == high_onsets.shape[0]
+    n_frames = low_onsets.shape[0]
+
+    noises = []
+    range_min, range_max, exponent = generator.get_noise_range()
+    
+    for scale in range(range_min, range_max):
+      height = 2 ** exponent(scale)
+      width = 2 ** exponent(scale)
+
+      if width > 256:
+        noises.append(None)
+        continue
+
+      noise_noisy = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 5)
+      noise = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 64)
+
+      if width < 128:
+        noise = low_onsets * noise_noisy + (1 - low_onsets) * noise
+      if width > 32:
+        noise = high_onsets * noise_noisy + (1 - high_onsets) * noise
+
+      noise /= noise.std()
+      noise *= amplification
+      noises.append(noise.cpu())
+
       print(list(noise[-1].shape), f"amplitude={noise[-1].std()}")
-    gc.collect()
-    torch.cuda.empty_cache()
-    print()
-  return noise
+      
+      gc.collect()
+      torch.cuda.empty_cache()
+      print()
+    
+    return noises
 
 def chroma_weight_latents(chroma, latents):
   """Creates chromagram weighted latent sequence
@@ -75,73 +103,23 @@ def chroma_weight_latents(chroma, latents):
   base_latents = (chroma[..., None, None] * latents[None, ...]).sum(1)
   return base_latents
 
-def gaussian_filter(x, sigma, causal=None):
-  """Smooth tensors along time (first) axis with gaussian kernel.
+def get_noise_at_scale(height, width, n_frames, track):
 
-  Args:
-      x (th.tensor): Tensor to be smoothed
-      sigma (float): Standard deviation for gaussian kernel (higher value gives smoother result)
-      causal (float, optional): Factor to multiply right side of gaussian kernel with. Lower value decreases effect of "future" values. Defaults to None.
-
-  Returns:
-      th.tensor: Smoothed tensor
-  """
-  dim = len(x.shape)
-  n_frames = x.shape[0]
-  while len(x.shape) < 3:
-    x = x[:, None]
-
-  radius = min(int(sigma * 4 * SMF), 3 * len(x))
-  channels = x.shape[1]
-
-  kernel = torch.arange(-radius, radius + 1, dtype=th.float32, device=x.device)
-  kernel = torch.exp(-0.5 / sigma ** 2 * kernel ** 2)
-  if causal is not None:
-    kernel[radius + 1 :] *= 0 if not isinstance(causal, float) else causal
-  kernel = kernel / kernel.sum()
-  kernel = kernel.view(1, 1, len(kernel)).repeat(channels, 1, 1)
-
-  if dim == 4:
-    t, c, h, w = x.shape
-    x = x.view(t, c, h * w)
-  x = x.transpose(0, 2)
-
-  if radius > n_frames:  # prevent padding errors on short sequences
-    x = F.pad(x, (n_frames, n_frames), mode="circular")
-    print(
-      f"WARNING: Gaussian filter radius ({int(sigma * 4 * SMF)}) is larger than number of frames ({n_frames}).\n\t Filter size has been lowered to ({radius}). You might want to consider lowering sigma ({sigma})."
-    )
-    x = F.pad(x, (radius - n_frames, radius - n_frames), mode="constant")
-  else:
-    x = F.pad(x, (radius, radius), mode="circular")
-
-  x = F.conv1d(x, weight=kernel, groups=channels)
-
-  x = x.transpose(0, 2)
-  if dim == 4:
-    x = x.view(t, c, h, w)
-
-  if len(x.shape) > dim:
-    x = x.squeeze()
-
-  return x
-
-def get_noise_at_scale(height, width, scale, num_scales, onsets_list, n_frames):
   if width > 256:
     return None
 
-  lo_onsets = onsets[0][:, None, None, None].cuda()
-  hi_onsets = onsets[1][:, None, None, None].cuda()
+  low_onsets = track._low_onsets.cuda()[:, None, None, None]
+  high_onsets = track._high_onsets.cuda()[:, None, None, None]
 
-  noise_noisy = gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 5)
-  noise = gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 128)
+  noise_noisy = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 5)
+  noise = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 128)
 
   if width < 128:
-    noise = lo_onsets * noise_noisy + (1 - lo_onsets) * noise
+    noise = low_onsets * noise_noisy + (1 - low_onsets) * noise
   if width > 32:
-    noise = hi_onsets * noise_noisy + (1 - hi_onsets) * noise
+    noise = high_onsets * noise_noisy + (1 - high_onsets) * noise
 
-  noise /= noise.std() * 2.5
+  noise /= noise.std()
 
   return noise.cpu()
 
@@ -156,21 +134,27 @@ from tqdm import tqdm
 
 def _render(
   scene,
-  generator,
-  offset,
-  duration,
-  batch_size=8,
-  out_size=512,
-  output_file="/tmp/output.mp4",
+  batch_size=32,
+  output_file=None,
   truncation=1.0,
-  bends=[],
-  rewrites={},
   randomize_noise=False,
   ffmpeg_preset="slow",
 ):
+  generator = scene.model.g_ema
+  duration = scene.n_frames / 24
   latents = scene.latents
   noise = scene.noise
   audio_file = scene.track.path
+  offset = 0
+  out_size = scene.model.output_size
+
+  if output_file is None:
+      output_file = os.path.join(
+      "/home/peddy_google_com/gen_dir/video",
+      io_utils.name_from_path(audio_file))
+      output_file = io_utils.next_dir(output_file)
+      output_file = f'{output_file}.mp4'
+
 
   torch.set_grad_enabled(False)
   torch.backends.cudnn.benchmark = True
@@ -192,7 +176,164 @@ def _render(
       jobs_in.task_done()
 
   # start background ffmpeg process that listens on stdin for frame data
-  if out_size == 512:
+  if out_size == 256:
+    output_size = "256x256"
+  elif out_size == 512:
+    output_size = "512x512"
+  elif out_size == 1024:
+    output_size = "1024x1024"
+  elif out_size == 1920:
+    output_size = "1920x1080"
+  elif out_size == 1080:
+    output_size = "1080x1920"
+  else:
+    raise Exception("The only output sizes currently supported are: 512, 1024, 1080, or 1920")
+
+  audio = ffmpeg.input(audio_file, ss=offset, t=duration, guess_layout_max=0)
+  video = (
+    ffmpeg.input("pipe:", format="rawvideo", pix_fmt="rgb24", framerate=len(latents) / duration, s=output_size)
+    .output(
+      audio,
+      output_file,
+      framerate=len(latents) / duration,
+      vcodec="libx264",
+      pix_fmt="yuv420p",
+      preset=ffmpeg_preset,
+      audio_bitrate="320K",
+      ac=2,
+      v="warning",
+    )
+    .global_args("-hide_banner")
+    .overwrite_output()
+    .run_async(pipe_stdin=True)
+  )
+
+  # writes numpy frames to ffmpeg stdin as raw rgb24 bytes
+  def make_video(jobs_in):
+    w, h = [int(dim) for dim in output_size.split("x")]
+    for _ in tqdm(range(len(latents)), position=0, leave=True, ncols=80):
+        img = jobs_in.get(timeout=5)
+        if img.shape[1] == 2048:
+            img = img[:, 112:-112, :]
+            im = PIL.Image.fromarray(img)
+            img = np.array(im.resize((1920, 1080), PIL.Image.BILINEAR))
+        elif img.shape[0] == 2048:
+            img = img[112:-112, :, :]
+            im = PIL.Image.fromarray(img)
+            img = np.array(im.resize((1080, 1920), PIL.Image.BILINEAR))
+        assert (
+            img.shape[1] == w and img.shape[0] == h
+        ), f"""generator's output image size does not match specified output size: \n
+            got: {img.shape[1]}x{img.shape[0]}\t\tshould be {output_size}"""
+        video.stdin.write(img.tobytes())
+        jobs_in.task_done()
+    video.stdin.close()
+    video.wait()
+
+  splitter = Thread(target=split_batches, args=(split_queue, render_queue))
+  splitter.daemon = True
+  renderer = Thread(target=make_video, args=(render_queue,))
+  renderer.daemon = True
+
+  # make all data that needs to be loaded to the GPU float, contiguous, and pinned
+  # the entire process is severly memory-transfer bound, but at least this might help a little
+  latents = latents.float().contiguous().pin_memory()
+
+  for ni, noise_scale in enumerate(noise):
+      noise[ni] = noise_scale.float().contiguous().pin_memory() if noise_scale is not None else None
+
+  param_dict = dict(generator.named_parameters())
+
+  if not isinstance(truncation, float):
+      truncation = truncation.float().contiguous().pin_memory()
+
+  for n in range(0, len(latents), batch_size):
+      # load batches of data onto the GPU
+      latent_batch = latents[n : n + batch_size].cuda(non_blocking=True)
+
+      noise_batch = []
+      for noise_scale in noise:
+          if noise_scale is not None:
+              noise_batch.append(noise_scale[n : n + batch_size].cuda(non_blocking=True))
+          else:
+              noise_batch.append(None)
+
+      bend_batch = []
+
+      if not isinstance(truncation, float):
+          truncation_batch = truncation[n : n + batch_size].cuda(non_blocking=True)
+      else:
+          truncation_batch = truncation
+
+      # forward through the generator
+      outputs, _ = generator(
+          styles=latent_batch,
+          noise=noise_batch,
+          truncation=truncation_batch,
+          transform_dict_list=bend_batch,
+          randomize_noise=randomize_noise,
+          input_is_latent=True,
+      )
+
+      # send output to be split into frames and rendered one by one
+      split_queue.put(outputs)
+
+      if n == 0:
+          splitter.start()
+          renderer.start()
+
+  splitter.join()
+  renderer.join()
+  return output_file
+
+def _complete_render(
+  scene,
+  batch_size=8,
+  out_size=512,
+  output_file=None,
+  truncation=1.0,
+  bends=[],
+  rewrites={},
+  randomize_noise=False,
+  ffmpeg_preset="slow",
+):
+  generator = scene.model.g_ema
+  duration = scene.n_frames / 24
+  latents = scene.latents
+  noise = scene.noise
+  audio_file = scene.track.path
+  offset = 0
+  if output_file is None:
+      output_file = os.path.join(
+      "/home/peddy_google_com/gen_dir/video",
+      io_utils.name_from_path(audio_file))
+      output_file = io_utils.next_dir(output_file)
+      output_file = f'{output_file}.mp4'
+
+
+  torch.set_grad_enabled(False)
+  torch.backends.cudnn.benchmark = True
+
+  split_queue = queue.Queue()
+  render_queue = queue.Queue()
+
+  # postprocesses batched torch tensors to individual RGB numpy arrays
+  def split_batches(jobs_in, jobs_out):
+    while True:
+      try:
+        imgs = jobs_in.get(timeout=5)
+      except queue.Empty:
+        return
+      imgs = (imgs.clamp_(-1, 1) + 1) * 127.5
+      imgs = imgs.permute(0, 2, 3, 1)
+      for img in imgs:
+        jobs_out.put(img.cpu().numpy().astype(np.uint8))
+      jobs_in.task_done()
+
+  # start background ffmpeg process that listens on stdin for frame data
+  if out_size == 256:
+    output_size = "256x256"
+  elif out_size == 512:
     output_size = "512x512"
   elif out_size == 1024:
     output_size = "1024x1024"
@@ -306,7 +447,7 @@ def _render(
       # forward through the generator
       outputs, _ = generator(
           styles=latent_batch,
-          noise=noise_batch,
+          noise=None,
           truncation=truncation_batch,
           transform_dict_list=bend_batch,
           randomize_noise=randomize_noise,
@@ -322,6 +463,7 @@ def _render(
 
   splitter.join()
   renderer.join()
+  return output_file
 
 
 def write_video(arr, output_file, fps):
