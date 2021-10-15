@@ -5,7 +5,7 @@ import numpy as np
 
 import torch.nn.functional as F
 
-from hal_project.hal.gen.gen import FRAME_RATE
+FRAME_RATE = 24
 
 def onsets(track, fmin=80, fmax=2000, power=1):
   audio = rosa.effects.percussive(y=track.audio, margin=8)

@@ -7,12 +7,16 @@ import numpy as np
 from torchvision import utils as tutils
 from tqdm import tqdm
 
-import hal_project.hal.io_utils as io_utils
-import hal_project.hal as hal
+import hal.io_utils as io_utils
+import hal as hal
 
-from hal_project.third_party.jcbrouwer_maua_stylegan2.models.stylegan2 import Generator as SG2Generator
+from third_party.jcbrouwer_maua_stylegan2.models.stylegan2 import Generator as SG2Generator
 
 import matplotlib.pyplot as plt
+
+## for _train
+import argparse
+
 
 #@hal.actor
 #@ray.remote
@@ -77,7 +81,7 @@ class JCBStyleGan:
     pass
 
   def train(self, dataset, finetune=True):
-    pass
+    _train(self)
 
   def project(self, image):
     pass
@@ -104,3 +108,264 @@ class JCBStyleGan:
 
   def explore(self):
     pass
+
+
+  def _train(self):
+    device = "cuda"
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--wbname", type=str, required=True)
+    parser.add_argument("--wbproj", type=str, required=True)
+    parser.add_argument("--wbgroup", type=str, default=None)
+
+    # data options
+    parser.add_argument("--path", type=str, required=True)
+    parser.add_argument("--vflip", type=bool, default=False)
+    parser.add_argument("--hflip", type=bool, default=True)
+
+    # training options
+    parser.add_argument("--batch_size", type=int, default=12)
+    parser.add_argument("--num_accumulate", type=int, default=1)
+
+    parser.add_argument("--checkpoint", type=str, default=None)
+    parser.add_argument("--transfer_mapping_only", type=bool, default=False)
+    parser.add_argument("--start_iter", type=int, default=0)
+    parser.add_argument("--iter", type=int, default=20_000)
+
+    # model options
+    parser.add_argument("--size", type=int, default=1024)
+    parser.add_argument("--min_rgb_size", type=int, default=4)
+    parser.add_argument("--latent_size", type=int, default=512)
+    parser.add_argument("--n_mlp", type=int, default=8)
+    parser.add_argument("--n_sample", type=int, default=60)
+    parser.add_argument("--constant_input", type=bool, default=False)
+    parser.add_argument("--channel_multiplier", type=int, default=2)
+    parser.add_argument("--d_skip", type=bool, default=True)
+
+    # optimizer options
+    parser.add_argument("--lr", type=float, default=0.002)
+    parser.add_argument("--d_lr_ratio", type=float, default=1.0)
+    parser.add_argument("--lookahead", type=bool, default=True)
+    parser.add_argument("--la_steps", type=float, default=500)
+    parser.add_argument("--la_alpha", type=float, default=0.5)
+
+    # loss options
+    parser.add_argument("--r1", type=float, default=1e-5)
+    parser.add_argument("--path_regularize", type=float, default=1)
+    parser.add_argument("--path_batch_shrink", type=int, default=2)
+    parser.add_argument("--d_reg_every", type=int, default=16)
+    parser.add_argument("--g_reg_every", type=int, default=4)
+    parser.add_argument("--mixing_prob", type=float, default=0.666)
+
+    # augmentation options
+    parser.add_argument("--augment", type=bool, default=True)
+    parser.add_argument("--contrastive", type=float, default=0)
+    parser.add_argument("--balanced_consistency", type=float, default=0)
+    parser.add_argument("--augment_p", type=float, default=0)
+    parser.add_argument("--ada_target", type=float, default=0.6)
+    parser.add_argument("--ada_length", type=int, default=15_000)
+
+    # validation options
+    parser.add_argument("--val_batch_size", type=int, default=6)
+    parser.add_argument("--fid_n_sample", type=int, default=2500)
+    parser.add_argument("--fid_truncation", type=float, default=None)
+    parser.add_argument("--ppl_space", choices=["z", "w"], default="w")
+    parser.add_argument("--ppl_n_sample", type=int, default=1250)
+    parser.add_argument("--ppl_crop", type=bool, default=False)
+
+    # logging options
+    parser.add_argument("--log_spec_norm", type=bool, default=False)
+    parser.add_argument("--img_every", type=int, default=1000)
+    parser.add_argument("--eval_every", type=int, default=-1)
+    parser.add_argument("--checkpoint_every", type=int, default=1000)
+    parser.add_argument("--profile_mem", action="store_true")
+
+    # (multi-)GPU options
+    parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--cudnn_benchmark", type=bool, default=True)
+
+    args = parser.parse_args()
+    if args.balanced_consistency > 0 or args.contrastive > 0:
+        args.augment = True
+    args.name = os.path.splitext(os.path.basename(args.path))[0]
+    args.r1 = args.r1 * args.size ** 2
+
+    args.num_gpus = 1
+    torch.backends.cudnn.benchmark = args.cudnn_benchmark
+    args.distributed = False
+
+    # code for updating wandb configs that were incorrect
+    # if args.local_rank == 0:
+    #     api = wandb.Api()
+    #     run = api.run("wav/temperatuur/7kp6g0zt")
+    #     run.config = vars(args)
+    #     run.update()
+    # exit()
+
+    generator = Generator(
+        args.size,
+        args.latent_size,
+        args.n_mlp,
+        channel_multiplier=args.channel_multiplier,
+        constant_input=args.constant_input,
+        min_rgb_size=args.min_rgb_size,
+    ).to(device, non_blocking=True)
+    discriminator = Discriminator(args.size, channel_multiplier=args.channel_multiplier, use_skip=args.d_skip).to(
+        device
+    )
+
+    if args.log_spec_norm:
+        for name, parameter in generator.named_parameters():
+            if "weight" in name and parameter.squeeze().dim() > 1:
+                mod = generator
+                for attr in name.replace(".weight", "").split("."):
+                    mod = getattr(mod, attr)
+                validation.track_spectral_norm(mod)
+        for name, parameter in discriminator.named_parameters():
+            if "weight" in name and parameter.squeeze().dim() > 1:
+                mod = discriminator
+                for attr in name.replace(".weight", "").split("."):
+                    mod = getattr(mod, attr)
+                validation.track_spectral_norm(mod)
+
+    g_ema = Generator(
+        args.size,
+        args.latent_size,
+        args.n_mlp,
+        channel_multiplier=args.channel_multiplier,
+        constant_input=args.constant_input,
+        min_rgb_size=args.min_rgb_size,
+    ).to(device, non_blocking=True)
+    g_ema.requires_grad_(False)
+    g_ema.eval()
+    accumulate(g_ema, generator, 0)
+
+    if args.contrastive > 0:
+        contrast_learner = ContrastiveLearner(
+            discriminator,
+            args.size,
+            augment_fn=nn.Sequential(
+                nn.ReflectionPad2d(int((math.sqrt(2) - 1) * args.size / 4)),  # zoom out
+                augs.RandomHorizontalFlip(),
+                RandomApply(augs.RandomAffine(degrees=0, translate=(0.25, 0.25), shear=(15, 15)), p=0.1),
+                RandomApply(augs.RandomRotation(180), p=0.1),
+                augs.RandomResizedCrop(size=(args.size, args.size), scale=(1, 1), ratio=(1, 1)),
+                RandomApply(augs.RandomResizedCrop(size=(args.size, args.size), scale=(0.5, 0.9)), p=0.1),  # zoom in
+                RandomApply(augs.RandomErasing(), p=0.1),
+            ),
+            hidden_layer=(-1, 0),
+        )
+    else:
+        contrast_learner = None
+
+    g_reg_ratio = args.g_reg_every / (args.g_reg_every + 1)
+    d_reg_ratio = args.d_reg_every / (args.d_reg_every + 1)
+
+    g_optim = torch.optim.Adam(
+        generator.parameters(), lr=args.lr * g_reg_ratio, betas=(0 ** g_reg_ratio, 0.99 ** g_reg_ratio),
+    )
+    d_optim = torch.optim.Adam(
+        discriminator.parameters(),
+        lr=args.lr * d_reg_ratio * args.d_lr_ratio,
+        betas=(0 ** d_reg_ratio, 0.99 ** d_reg_ratio),
+    )
+
+    if args.lookahead:
+        g_optim = LookaheadMinimax(
+            g_optim, d_optim, la_steps=args.la_steps, la_alpha=args.la_alpha, accumulate=args.num_accumulate
+        )
+
+    if args.checkpoint is not None:
+        print("load model:", args.checkpoint)
+
+        checkpoint = th.load(args.checkpoint, map_location=lambda storage, loc: storage)
+
+        try:
+            ckpt_name = os.path.basename(args.checkpoint)
+            args.start_iter = int(os.path.splitext(ckpt_name)[-1].replace(args.name, ""))
+        except ValueError:
+            pass
+
+        if args.transfer_mapping_only:
+            print("Using generator latent mapping network from checkpoint")
+            mapping_state_dict = {}
+            for key, val in checkpoint["state_dict"].items():
+                if "generator.style" in key:
+                    mapping_state_dict[key.replace("generator.", "")] = val
+            generator.load_state_dict(mapping_state_dict, strict=False)
+        else:
+            generator.load_state_dict(checkpoint["g"], strict=False)
+            g_ema.load_state_dict(checkpoint["g_ema"], strict=False)
+
+            discriminator.load_state_dict(checkpoint["d"], strict=False)
+
+            if args.lookahead:
+                g_optim.load_state_dict(checkpoint["g_optim"], checkpoint["d_optim"])
+            else:
+                g_optim.load_state_dict(checkpoint["g_optim"])
+                d_optim.load_state_dict(checkpoint["d_optim"])
+
+        del checkpoint
+        th.cuda.empty_cache()
+
+    if args.distributed:
+        generator = nn.parallel.DistributedDataParallel(
+            generator,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            broadcast_buffers=False,
+            find_unused_parameters=True,
+        )
+
+        discriminator = nn.parallel.DistributedDataParallel(
+            discriminator,
+            device_ids=[args.local_rank],
+            output_device=args.local_rank,
+            broadcast_buffers=False,
+            find_unused_parameters=True,
+        )
+
+        if contrast_learner is not None:
+            contrast_learner = nn.parallel.DistributedDataParallel(
+                contrast_learner,
+                device_ids=[args.local_rank],
+                output_device=args.local_rank,
+                broadcast_buffers=False,
+                find_unused_parameters=True,
+            )
+
+    transform = transforms.Compose(
+        [
+            transforms.RandomVerticalFlip(p=0.5 if args.vflip else 0),
+            transforms.RandomHorizontalFlip(p=0.5 if args.hflip else 0),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        ]
+    )
+
+    dataset = MultiResolutionDataset(args.path, transform, args.size)
+    loader = data.DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        sampler=data_sampler(dataset, shuffle=True, distributed=args.distributed),
+        num_workers=8,
+        drop_last=True,
+        pin_memory=True,
+    )
+
+    if get_rank() == 0:
+        validation.get_dataset_inception_features(loader, args.name, args.size)
+        if args.wbgroup is None:
+            wandb.init(project=args.wbproj, name=args.wbname, config=vars(args))
+        else:
+            wandb.init(project=args.wbproj, group=args.wbgroup, name=args.wbname, config=vars(args))
+
+    if args.profile_mem:
+        os.environ["GPU_DEBUG"] = str(args.local_rank)
+        from gpu_profile import gpu_profile
+
+        sys.settrace(gpu_profile)
+
+    train(args, loader, generator, discriminator, contrast_learner, g_optim, d_optim, g_ema)
+

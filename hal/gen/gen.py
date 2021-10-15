@@ -6,7 +6,6 @@ from pathlib import Path
 import joblib
 import librosa as rosa
 import librosa.display
-import madmom as mm
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
@@ -15,8 +14,10 @@ import scipy.signal as signal
 import sklearn.cluster
 import torch as torch
 
-from hal_project.hal.audio import analyzers
-from hal_project.hal import io_utils 
+from hal.audio import analyzers
+from hal import io_utils 
+
+import hal
 
 FRAME_RATE = 24
 
@@ -25,70 +26,67 @@ class Scene:
     self.model = model
     self.track = track
     self.n_frames = FRAME_RATE * int(track.audio.shape[0] / track.sr)
-    self.latents = self.get_latents(model, track)
-    self.noise = self.get_noise(model, track)
+    self.latents = get_latents(model, track)
+    self.noise = get_noise(model, track)
 
+  @hal.remote
   def render(self):
     return _render(self)
 
-  def get_latents(self, model, track):
-    note_latents = model._generate_latents(12).cpu()
-    chroma = analyzers.chroma(track)
-    chroma_latents = chroma_weight_latents(chroma, note_latents)
+def get_latents(model, track):
+  note_latents = model._generate_latents(12).cpu()
+  chroma = analyzers.chroma(track)
+  chroma_latents = chroma_weight_latents(chroma, note_latents)
+  
+  latents = analyzers.gaussian_filter(chroma_latents, 4)
 
-    self.note_latents = note_latents
-    self.chroma = chroma
-    self.chroma_latents = chroma_latents
+  high_onsets = track._high_onsets[:, None, None]
+  low_onsets = track._low_onsets[:, None, None]
+
+  latents = (high_onsets * note_latents[[-4]]) + ((1 - high_onsets) * latents)
+  latents = low_onsets * note_latents[[-7]] + (1 - low_onsets) * latents
+
+  latents = analyzers.gaussian_filter(latents, 2, causal=0.2)
+
+  return latents
+
+def get_noise(generator, track, amplification=4):
+  
+  low_onsets = track._low_onsets.cuda()[:, None, None, None]
+  high_onsets = track._high_onsets.cuda()[:, None, None, None]
+  assert low_onsets.shape[0] == high_onsets.shape[0]
+  n_frames = low_onsets.shape[0]
+
+  noises = []
+  range_min, range_max, exponent = generator.get_noise_range()
+  
+  for scale in range(range_min, range_max):
+    height = 2 ** exponent(scale)
+    width = 2 ** exponent(scale)
+
+    if width > 256:
+      noises.append(None)
+      continue
+
+    noise_noisy = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 4)
+    noise = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 32)
+
+    if width < 128:
+      noise = low_onsets * noise_noisy + (1 - low_onsets) * noise
+    if width > 32:
+      noise = high_onsets * noise_noisy + (1 - high_onsets) * noise
+
+    noise /= noise.std()
+    noise *= amplification
+    noises.append(noise.cpu())
+
+    #print(list(noise[-1].shape), f"amplitude={noise[-1].std()}")
     
-    latents = analyzers.gaussian_filter(chroma_latents, 4)
-
-    high_onsets = track._high_onsets[:, None, None]
-    low_onsets = track._low_onsets[:, None, None]
-
-    latents = (high_onsets * note_latents[[-4]]) + ((1 - high_onsets) * latents)
-    latents = low_onsets * note_latents[[-7]] + (1 - low_onsets) * latents
-
-    latents = analyzers.gaussian_filter(latents, 2, causal=0.2)
-
-    return latents
-
-  def get_noise(self, generator, track, amplification=4):
-    
-    low_onsets = track._low_onsets.cuda()[:, None, None, None]
-    high_onsets = track._high_onsets.cuda()[:, None, None, None]
-    assert low_onsets.shape[0] == high_onsets.shape[0]
-    n_frames = low_onsets.shape[0]
-
-    noises = []
-    range_min, range_max, exponent = generator.get_noise_range()
-    
-    for scale in range(range_min, range_max):
-      height = 2 ** exponent(scale)
-      width = 2 ** exponent(scale)
-
-      if width > 256:
-        noises.append(None)
-        continue
-
-      noise_noisy = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 5)
-      noise = analyzers.gaussian_filter(torch.randn((n_frames, 1, height, width), device="cuda"), 64)
-
-      if width < 128:
-        noise = low_onsets * noise_noisy + (1 - low_onsets) * noise
-      if width > 32:
-        noise = high_onsets * noise_noisy + (1 - high_onsets) * noise
-
-      noise /= noise.std()
-      noise *= amplification
-      noises.append(noise.cpu())
-
-      print(list(noise[-1].shape), f"amplitude={noise[-1].std()}")
-      
-      gc.collect()
-      torch.cuda.empty_cache()
-      print()
-    
-    return noises
+    gc.collect()
+    torch.cuda.empty_cache()
+    print()
+  
+  return noises
 
 def chroma_weight_latents(chroma, latents):
   """Creates chromagram weighted latent sequence

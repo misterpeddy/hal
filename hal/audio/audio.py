@@ -10,8 +10,8 @@ from IPython.display import display as Idisplay
 
 from demucs import separate as dm_separate
 
-from hal_project.hal import io_utils
-from hal_project.hal.audio import analyzers
+from hal import io_utils
+from hal.audio import analyzers
 
 _FIG_SIZE = (12, 3)
 

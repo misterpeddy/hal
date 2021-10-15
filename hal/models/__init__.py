@@ -1,1 +1,1 @@
-from hal_project.hal.models.jcb_stylegan import JCBStyleGan as StyleGan
+from hal.models.jcb_stylegan import JCBStyleGan as StyleGan

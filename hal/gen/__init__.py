@@ -1,1 +1,1 @@
-from hal_project.hal.gen.gen import *
+from hal.gen.gen import *

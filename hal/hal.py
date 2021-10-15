@@ -12,12 +12,15 @@ from IPython.display import display as Idisplay
 
 from base64 import b64encode
 
-import hal_project.hal as hal
-from hal_project.hal import io_utils
+import hal as hal
+from hal import io_utils
+
+def init():
+  ray.init(ignore_reinit_error=True)
 
 def remote(func):
   '''Wraps a function as a Ray Task, to be inspected with hal.show().'''
-  @ray.remote
+  @ray.remote(num_gpus=0.5, max_calls=1)
   def ray_func(*args, **kwargs):
     return func(*args, **kwargs)
   return ray_func.remote
@@ -42,9 +45,9 @@ def show(o):
     o = ray.get(o)
   # TODO: change this to isinstance(o, (hal.audio.Track)) once interaction
   # with autoreload is fixed.
-  if str(type(o)) == "<class 'hal_project.hal.audio.audio.Track'>":
+  if str(type(o)) == "<class 'hal.audio.audio.Track'>":
     return _show_track(o)
-  if str(type(o)) == "<class 'hal_project.hal.audio.audio.Audio'>":
+  if str(type(o)) == "<class 'hal.audio.audio.Audio'>":
     return _show_audio(o)
   if isinstance(o, list):
     return _show_list(o)
@@ -113,7 +116,3 @@ def _show_mp4(v):
         <source src="%s" type="video/mp4">
   </video>
   """ % data_url))
-
-
-def _show_image(image_tensor):
-  pass
