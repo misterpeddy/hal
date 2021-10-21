@@ -21,9 +21,10 @@ def make_all_deps():
             'ray~=1.0.1',
             'librosa~=0.8.1',
             'demucs~=2.0',
-            'matplotlib~=3.4',
-            'ipython~=7.0',
-            'ninja~=1.10'
+            'matplotlib',
+            'ipython',
+            'ninja',
+            'ffmpeg-python'
             ]
 
 validate_torch_installation()

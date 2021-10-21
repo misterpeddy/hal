@@ -24,11 +24,7 @@ class JCBStyleGan:
 
   def __init__(self):
 
-    # sys.path.append('/home/peddy_google_com/hal/old')
-    #_ckpt = "/home/peddy_google_com/data/abstract_art_000280.pt"
-    #_ckpt = "/home/peddy_google_com/hal_old/checkpoint/530000.pt"
-    #_ckpt = "/home/peddy_google_com/data/models/rick_morty_cartoon.pt"
-    _ckpt = "/home/peddy_google_com/data/models/freagan.pt"
+    _ckpt = "/content/freagan.pt"
     self.n_mlp = 8
     self.latent_dim = 512
     self.output_size = 1024
@@ -37,7 +33,7 @@ class JCBStyleGan:
     self.g_ema = SG2Generator(self.output_size, self.latent_dim, self.n_mlp, constant_input=True).to(self.device)
     self.checkpoint = torch.load(_ckpt)
     self.g_ema.load_state_dict(self.checkpoint["g_ema"], strict=False)
-    self.gen_dir = "/home/peddy_google_com/drive/ai_art/stylegan-ada-experiments/00006-train_preprocessed-auto1-resumecustom/gen/"
+    self.gen_dir = "/content/gen/"
     os.makedirs(self.gen_dir, exist_ok=True)
 
   def _generate_latents(self, n_latents):
