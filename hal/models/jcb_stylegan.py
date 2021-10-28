@@ -22,18 +22,24 @@ import argparse
 #@ray.remote
 class JCBStyleGan:
 
-  def __init__(self):
+  def __init__(self, variant='freagan'):
 
-    _ckpt = "/content/freagan.pt"
+    assert variant in {'freagan', 'abstract_art_000280', 'rick_morty_cartoon'}
+    _base_dir = os.path.join(os.path.expanduser('~'), '.hal', 'models', 'jcb_style_gan')
+    self.checkpoint_path = os.path.join(_base_dir, 'checkpoints', f'{variant}.pt')
+    if not os.path.exists(self.checkpoint_path):
+      checkpoint_url = f'https://storage.googleapis.com/peddy-ai-models/stylegan2-pt-rosinality/{variant}.pt'
+      print(f'Downloading checkpoint "{checkpoint_url}"')
+      hal.io_utils.download_file(checkpoint_url, self.checkpoint_path)
     self.n_mlp = 8
     self.latent_dim = 512
     self.output_size = 1024
     self.generator_resolution = 1024
     self.device = "cuda" if torch.cuda.is_available() else "cpu"
     self.g_ema = SG2Generator(self.output_size, self.latent_dim, self.n_mlp, constant_input=True).to(self.device)
-    self.checkpoint = torch.load(_ckpt)
+    self.checkpoint = torch.load(self.checkpoint_path)
     self.g_ema.load_state_dict(self.checkpoint["g_ema"], strict=False)
-    self.gen_dir = "/content/gen/"
+    self.gen_dir = os.path.join(_base_dir, 'generated')
     os.makedirs(self.gen_dir, exist_ok=True)
 
   def _generate_latents(self, n_latents):
@@ -82,6 +88,7 @@ class JCBStyleGan:
   def project(self, image):
     pass
 
+  @hal.remote
   def example(self, n=1, n_samples=1, truncation=0.9, truncation_mean=4096, seeds=[], center=None):
     """ Creates `n_samples` of `n` examples"""
     mean_latent = None

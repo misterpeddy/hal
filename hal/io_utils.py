@@ -1,5 +1,7 @@
 import os
 
+import urllib.request
+
 def next_dir(root):
   """Creates root if not exists; Creates n+1st numbered directory within it."""
   assert root is not None
@@ -19,3 +21,9 @@ def name_from_path(path):
   if '.' in basename:
     basename = basename.split('.')[0]
   return basename
+
+def download_file(url, filepath):
+  """Downloads file at given url to given filepath."""
+  if not os.path.exists(os.path.dirname(filepath)):
+    os.makedirs(os.path.dirname(filepath))
+  urllib.request.urlretrieve(url, filepath)

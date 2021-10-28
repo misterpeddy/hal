@@ -16,8 +16,8 @@ Currently, I'm focused on the Audio to Video use case - others (Text -> Audio/Vi
 1) Everything that may take a long time is async - We use Ray to distribute computations across cores and/or machines, when available. However, Ray is an implementation detail of the framework and thus is never exposed to the end user.
 2) Everything that is returned by any public Hal API must be inspectable with `hal.show()` - this foundational decision allows us to completely decouple the generation of an artifact (which may be happening async) from the materialization of the artifact to disk (which may be remote) from the consumption of the artifact by the end user (since they'll never access artifacts directly, but rather via our inspection API)
 3) Colab is the only programming environment supported by Hal - Most libraries we use have intricate (and sometimes poorly tested) inter-dependencies - instead of trying to poorly support N execution environments, we only support (and test against) the current Colab runtime.
-* All user actions that require deep introspection of a model or inference result are done via Weights & Biases - A Hal user must also be a W&B user to accomplish anything sophisticated (model [re-]training, factorization, etc.).
-* Hi fidelity media generation is expensive - all generative types should provide separate APIs for experimentation and export APIs that re-do computation at higher fidelity when the user is ready to export finalized work. 
+4) All user actions that require deep introspection of a model or inference result are done via Weights & Biases - A Hal user must also be a W&B user to accomplish anything sophisticated (model [re-]training, factorization, etc.).
+5) Hi fidelity media generation is expensive - all generative types should provide separate APIs for experimentation and export APIs that re-do computation at higher fidelity when the user is ready to export finalized work. 
 
 ## User Guide
 

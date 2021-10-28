@@ -8,11 +8,14 @@ def validate_torch_installation():
     for lib in torch_libs:
         lib_version = version(lib)
         if ('+' not in lib_version) or (cuda_version_str != lib_version.split('+')[1]):
-            raise ImportError('''
-Needed PyTorch related package are not distributed through pypi and thus cannot be installed automatically. 
-Run the following to install them before installing hal and/or refer to https://pytorch.org/get-started/locally/ for more options.
+            raise ImportError(
+            '''
+            Needed PyTorch related package are not distributed through pypi and thus cannot be installed automatically. 
+            Run the following to install them before installing hal and/or refer to https://pytorch.org/get-started/locally/ for more options.
 
-pip3 install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html''')
+            pip3 install torch==1.9.1+cu111 torchvision==0.10.1+cu111 torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+            '''
+            )
 
 def make_all_deps():
     '''Returns complete list of dependencies.'''

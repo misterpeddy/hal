@@ -116,3 +116,6 @@ def _show_mp4(v):
         <source src="%s" type="video/mp4">
   </video>
   """ % data_url))
+
+def version():
+  return 1
