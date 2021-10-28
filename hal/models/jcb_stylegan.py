@@ -7,7 +7,7 @@ import numpy as np
 from torchvision import utils as tutils
 from tqdm import tqdm
 
-import hal.io_utils as io_utils
+from hal import io_utils
 import hal as hal
 
 from third_party.jcbrouwer_maua_stylegan2.models.stylegan2 import Generator as SG2Generator
@@ -25,8 +25,8 @@ class JCBStyleGan:
   def __init__(self, variant='freagan'):
 
     assert variant in {'freagan', 'abstract_art_000280', 'rick_morty_cartoon'}
-    _base_dir = os.path.join(os.path.expanduser('~'), '.hal', 'models', 'jcb_style_gan')
-    self.checkpoint_path = os.path.join(_base_dir, 'checkpoints', f'{variant}.pt')
+    self.cache_dir = io_utils.create_cache_dir('models', 'jcb_style_gan')
+    self.checkpoint_path = os.path.join(self.cache_dir, 'checkpoints', f'{variant}.pt')
     if not os.path.exists(self.checkpoint_path):
       checkpoint_url = f'https://storage.googleapis.com/peddy-ai-models/stylegan2-pt-rosinality/{variant}.pt'
       print(f'Downloading checkpoint "{checkpoint_url}"')
@@ -39,7 +39,7 @@ class JCBStyleGan:
     self.g_ema = SG2Generator(self.output_size, self.latent_dim, self.n_mlp, constant_input=True).to(self.device)
     self.checkpoint = torch.load(self.checkpoint_path)
     self.g_ema.load_state_dict(self.checkpoint["g_ema"], strict=False)
-    self.gen_dir = os.path.join(_base_dir, 'generated')
+    self.gen_dir = os.path.join(self.cache_dir, 'generated')
     os.makedirs(self.gen_dir, exist_ok=True)
 
   def _generate_latents(self, n_latents):

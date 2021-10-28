@@ -1,8 +1,10 @@
 # Hal
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/misterpeddy/hal/blob/master/hal_getting_started.ipynb)
+
 Hal is a toolkit for generating controllable and explainable multi-modal hallucinations.
 
-* toolkit - A collection of carefully picked dependency tools ([Ray](https://github.com/ray-project/ray), [Weights & Biases](https://wandb.ai/site), [PyTorch](https://github.com/pytorch/pytorch), [Colab](https://colab.research.google.com/?utm_source=scs-index))
+* toolkit - A collection of carefully picked dependency tools ([Ray](https://github.com/ray-project/ray) for compute management, [Weights & Biases](https://wandb.ai/site) for artifact and experiment management, [Colab](https://colab.research.google.com/?utm_source=scs-index) for dependency management (i.e. singular runtime) and development environment)
 * generating - The goal is to help artists and creatives generate media - everything else is a means to this end.
 * controllable - The artist is provided with high degree of control over the generation process. 
 * explainable - Repeatability and disciplined tracking of artifacts (models, configs, hparams) is of utmost importance. Every generated piece of media should be able to be tracked to its upstream parent artifacts (models, datasets, experiments, ...)
@@ -14,8 +16,8 @@ Currently, I'm focused on the Audio to Video use case - others (Text -> Audio/Vi
 ## Principles
 
 1) Everything that may take a long time is async - We use Ray to distribute computations across cores and/or machines, when available. However, Ray is an implementation detail of the framework and thus is never exposed to the end user.
-2) Everything that is returned by any public Hal API must be inspectable with `hal.show()` - this foundational decision allows us to completely decouple the generation of an artifact (which may be happening async) from the materialization of the artifact to disk (which may be remote) from the consumption of the artifact by the end user (since they'll never access artifacts directly, but rather via our inspection API)
-3) Colab is the only programming environment supported by Hal - Most libraries we use have intricate (and sometimes poorly tested) inter-dependencies - instead of trying to poorly support N execution environments, we only support (and test against) the current Colab runtime.
+2) Everything that is returned by any public Hal API must be inspectable with `hal.show()` - this foundational decision allows us to completely decouple the generation of an artifact (which may be happening async) from the materialization of the artifact to disk (which may be remote) from the consumption of the artifact by the end user (since they'll never access artifacts directly, but rather via our inspection API, `hal.show()`)
+3) Colab is the only programming environment supported by Hal - Most libraries used in generative modeling have intricate (and sometimes poorly tested) inter-dependencies - instead of trying to poorly support N execution environments, we only support (and test against) the current Colab runtime.
 4) All user actions that require deep introspection of a model or inference result are done via Weights & Biases - A Hal user must also be a W&B user to accomplish anything sophisticated (model [re-]training, factorization, etc.).
 5) Hi fidelity media generation is expensive - all generative types should provide separate APIs for experimentation and export APIs that re-do computation at higher fidelity when the user is ready to export finalized work. 
 

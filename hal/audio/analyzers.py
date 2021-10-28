@@ -5,12 +5,12 @@ import numpy as np
 
 import torch.nn.functional as F
 
-FRAME_RATE = 24
+_VID_FRAME_RATE = 24
 
 def onsets(track, fmin=80, fmax=2000, power=1):
   audio = rosa.effects.percussive(y=track.audio, margin=8)
   onset_frames = rosa.onset.onset_strength(audio, sr=track.sr, fmin=fmin, fmax=fmax)
-  n_frames = int(FRAME_RATE * audio.shape[0] / track.sr)
+  n_frames = int(_VID_FRAME_RATE * audio.shape[0] / track.sr)
   onset_frames = np.clip(signal.resample(onset_frames, n_frames), onset_frames.min(), onset_frames.max())
   onset_frames = torch.from_numpy(onset_frames).float()
   onset_frames = gaussian_filter(onset_frames, 1)
@@ -32,7 +32,7 @@ def chroma(track, margin=16, notes=12):
     """
     y_harm = rosa.effects.harmonic(y=track.audio, margin=margin)
     chroma = rosa.feature.chroma_cens(y_harm, sr=track.sr).T
-    n_frames = int(FRAME_RATE * track.audio.shape[0] / track.sr)
+    n_frames = int(_VID_FRAME_RATE * track.audio.shape[0] / track.sr)
     chroma = signal.resample(chroma, n_frames)
     notes_indices = np.argsort(np.median(chroma, axis=0))[:notes]
     chroma = chroma[:, notes_indices]

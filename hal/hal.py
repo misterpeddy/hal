@@ -69,7 +69,7 @@ def clear():
 
 def _show_track(t):
   print(t.name)
-  t.play_audio()
+  t.show_player()
   t.show_wave()
   t.show_onsets()
   t.show_chromagram()
@@ -116,6 +116,3 @@ def _show_mp4(v):
         <source src="%s" type="video/mp4">
   </video>
   """ % data_url))
-
-def version():
-  return 1

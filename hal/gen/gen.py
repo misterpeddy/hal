@@ -26,6 +26,7 @@ class Scene:
     self.model = model
     self.track = track
     self.n_frames = FRAME_RATE * int(track.audio.shape[0] / track.sr)
+    self.gen_dir = io_utils.create_cache_dir('gen', 'video')
     self.latents = get_latents(model, track)
     self.noise = get_noise(model, track)
 
@@ -148,7 +149,7 @@ def _render(
 
   if output_file is None:
       output_file = os.path.join(
-      "/home/peddy_google_com/gen_dir/video",
+      scene.gen_dir, 
       io_utils.name_from_path(audio_file))
       output_file = io_utils.next_dir(output_file)
       output_file = f'{output_file}.mp4'
@@ -303,7 +304,7 @@ def _complete_render(
   offset = 0
   if output_file is None:
       output_file = os.path.join(
-      "/home/peddy_google_com/gen_dir/video",
+      scene.gen_dir, 
       io_utils.name_from_path(audio_file))
       output_file = io_utils.next_dir(output_file)
       output_file = f'{output_file}.mp4'

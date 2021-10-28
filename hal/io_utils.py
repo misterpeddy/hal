@@ -27,3 +27,14 @@ def download_file(url, filepath):
   if not os.path.exists(os.path.dirname(filepath)):
     os.makedirs(os.path.dirname(filepath))
   urllib.request.urlretrieve(url, filepath)
+
+
+def create_cache_dir(*args):
+  """Creates subdirectories (args) inside hal basedir."""
+  # TODO: This needs to be more visible and configurable
+  base_dir = os.path.join(os.path.expanduser('~'), '.hal')
+  cache_dir = os.path.join(base_dir, *args)
+  if not os.path.exists(cache_dir):
+    os.makedirs(cache_dir)
+  return cache_dir
+  
