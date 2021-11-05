@@ -33,6 +33,7 @@ class InterpolationScene(BaseScene):
 class MorphingInterpolationScene(BaseScene):
   """Interpolates between two latents, with onset weighted movement"""
   def render(self):
-    self.latents = gen.get_interp_onsets_latents_with_movement(self.model, self.track)
-    self.noise = gen.empty_noise(self.model)
+    self.latents = gen.get_interp_onsets_latents(self.model, self.track)
+    self.latents = gen.add_movement(self.latents, self.track)
+    self.noise = gen.noise(self.model, self.track, amplification=2)
     return super().render()

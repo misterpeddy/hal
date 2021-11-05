@@ -1,18 +1,25 @@
 import gc
-import os
-import warnings
-from pathlib import Path
-
+import ffmpeg
+import numpy as np
+import PIL.Image
+import torch as th
 import joblib
 import librosa as rosa
 import librosa.display
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
 import numpy as np
+import queue
 import scipy
 import scipy.signal as signal
 import sklearn.cluster
 import torch as torch
+import os
+import warnings
+
+from pathlib import Path
+from threading import Thread
+from tqdm import tqdm
 
 from hal.audio import analyzers
 from hal import io_utils
@@ -40,7 +47,7 @@ def lerp(start, end, weights):
   """Returns a linear interploation between a and b, weighted by weights."""
   return (weights * start) + ((1 - weights) * end)
 
-def add_movement(lerp, track):
+def add_movement(lerp, track, scale=False):
   """Adds random sinusoidal movement in each of the latent dims"""
   shape = lerp.shape
 
@@ -57,16 +64,13 @@ def add_movement(lerp, track):
   y = y.permute(2, 0, 1)
 
   moved_lerp = y * lerp
-  scale = (track._low_onsets ) * (10 ** 0.1)
-  scale = scale.reshape(scale.shape[0], 1, 1)
-  scale = scale * torch.ones_like(lerp)
-  scaled_lerp = scale * moved_lerp
-  return scaled_lerp
+  if scale:
+    scale = (track._low_onsets ) * (10 ** 0.1)
+    scale = scale.reshape(scale.shape[0], 1, 1)
+    scale = scale * torch.ones_like(lerp)
+    moved_lerp = scale * moved_lerp
 
-def get_interp_onsets_latents_with_movement(model, track):
-  lerp_latents = get_interp_onsets_latents(model, track)
-  lerp_with_movement = add_movement(lerp_latents, track)
-  return lerp_with_movement
+  return moved_lerp
 
 def get_interp_onsets_latents(model, track):
   start, end = model._generate_latents(2).cpu()
@@ -170,15 +174,6 @@ def get_noise_at_scale(height, width, n_frames, track):
   noise /= noise.std()
 
   return noise.cpu()
-
-import queue
-from threading import Thread
-
-import ffmpeg
-import numpy as np
-import PIL.Image
-import torch as th
-from tqdm import tqdm
 
 def render(
   scene,
