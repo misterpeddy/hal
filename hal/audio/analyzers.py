@@ -3,6 +3,8 @@ import scipy.signal as signal
 import librosa as rosa
 import numpy as np
 
+import logging
+
 import torch.nn.functional as F
 
 _VID_FRAME_RATE = 24
@@ -114,7 +116,7 @@ def gaussian_filter(x, sigma, causal=None):
 
   if radius > n_frames:  # prevent padding errors on short sequences
     x = F.pad(x, (n_frames, n_frames), mode="circular")
-    print(
+    logging.warning(
       f"WARNING: Gaussian filter radius ({int(sigma * 4 * SMF)}) is larger than number of frames ({n_frames}).\n\t Filter size has been lowered to ({radius}). You might want to consider lowering sigma ({sigma})."
     )
     x = F.pad(x, (radius - n_frames, radius - n_frames), mode="constant")

@@ -1,3 +1,4 @@
+import logging
 import ray
 import math
 import matplotlib.pyplot as plt
@@ -6,6 +7,7 @@ import gc
 import inspect
 import torch
 import os
+import warnings
 
 from IPython.display import HTML
 from IPython.display import display as Idisplay
@@ -15,8 +17,11 @@ from base64 import b64encode
 import hal as hal
 from hal import io_utils
 
-def init():
-  ray.init(ignore_reinit_error=True)
+def init(verbose=False):
+  if not verbose:
+    logging.getLogger().setLevel(logging.ERROR)
+    warnings.filterwarnings('ignore')
+  ray.init(ignore_reinit_error=True, logging_level=logging.ERROR)
 
 def remote(func):
   '''Wraps a function as a Ray Task, to be inspected with hal.show().'''
@@ -26,7 +31,7 @@ def remote(func):
   return ray_func.remote
 
 def actor(cls):
-  '''Wraps a Ray Actor class to expose underlying class API (i.e. no .remote()).''' 
+  '''Wraps a Ray Actor class to expose underlying class API (i.e. no .remote()).'''
   assert hasattr(cls, '_ray_from_modified_class')
   class Facade:
     def __init__(self):
@@ -41,7 +46,7 @@ def actor(cls):
 
 def show(o):
   '''If a ObjRef, first waits on it; then shows object as appropriate.'''
-  if str(type(o)) == "<class 'ray._raylet.ObjectRef'>":  
+  if str(type(o)) == "<class 'ray._raylet.ObjectRef'>":
     o = ray.get(o)
   # TODO: change this to isinstance(o, (hal.audio.Track)) once interaction
   # with autoreload is fixed.
@@ -84,19 +89,19 @@ def _show_list(l):
   for p in l:
     if not os.path.isfile(p):
       raise NotImplementedError('"{}" not a valid path.'.format(p))
-  
+
   for i, p in enumerate(l):
     plt.figure(figsize=(10, 8))
     plt.gca().axes.xaxis.set_visible(False)
     plt.gca().axes.yaxis.set_visible(False)
     plt.tight_layout()
-    
+
     img = plt.imread(p)
     plt.imshow(img)
-    
+
     title = io_utils.name_from_path(p)
     plt.title(title)
-    
+
     plt.show()
 
 def _show_dict(d):
