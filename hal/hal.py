@@ -16,6 +16,7 @@ from base64 import b64encode
 
 import hal as hal
 from hal import io_utils
+from hal.audio import Audio, Track
 
 def init(verbose=False):
   if not verbose:
@@ -53,6 +54,8 @@ def show(o):
   if str(type(o)) == "<class 'hal.audio.audio.Track'>":
     return _show_track(o)
   if str(type(o)) == "<class 'hal.audio.audio.Audio'>":
+    return _show_audio(o)
+  if str(type(o)) == "<class 'hal.audio.audio.YouTubeAudio'>":
     return _show_audio(o)
   if isinstance(o, list):
     return _show_list(o)

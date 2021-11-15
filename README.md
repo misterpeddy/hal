@@ -2,16 +2,28 @@
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/misterpeddy/hal/blob/master/hal_getting_started.ipynb)
 
-Hal is a toolkit for generating controllable and explainable multi-modal hallucinations.
+Hal is a toolkit for responsible generation of multi-modal machine-learned hallucinations.
 
-* toolkit - A collection of carefully picked dependency tools ([Ray](https://github.com/ray-project/ray) for compute management, [Weights & Biases](https://wandb.ai/site) for artifact and experiment management, [Colab](https://colab.research.google.com/?utm_source=scs-index) for dependency management (i.e. singular runtime) and development environment)
-* generating - The goal is to help artists and creatives generate media - everything else is a means to this end.
-* controllable - The artist is provided with high degree of control over the generation process. 
-* explainable - Repeatability and disciplined tracking of artifacts (models, configs, hparams) is of utmost importance. Every generated piece of media should be able to be tracked to its upstream parent artifacts (models, datasets, experiments, ...)
-* multi-modal - The focus is on cross-modality generation (text->image, audio->video, etc.).
-* hallucinations - Hal is a tool for artistic expression using generative, machine-learned models - while it provides infrastructure for tasks such as text to speech or ASR, it will not actively support these. As a rule of thumb, if there exist generally accepted "goodness" metrics for its generated media (e.g., WER), you're using it for something it's not meant to do.
+* **toolkit** - Not a library, but a collection of carefully picked tools: ([Ray](https://github.com/ray-project/ray) for compute management, [Weights & Biases](https://wandb.ai/site) for artifact and experiment management, [Colab](https://colab.research.google.com/?utm_source=scs-index) both as a development environment and for dependency management (using its prod runtime).
+* **responsible** - [read this](#motivation-responsible-ai)
+* **generation** - The goal is to help artists and creatives generate media - everything else is a means to this end.
+* **multi-modal** - The focus is on cross-modality generation (text->image, audio->video, etc.).
+* **machine-learned hallucinations** - Hal is a tool for artistic expression using generative, machine-learned models - while it provides infrastructure for tasks such as text to speech or ASR, it will not actively support these. As a rule of thumb, if there exist generally accepted "goodness" metrics for its generated media (e.g., WER), you're using it for something it's not meant to do.
 
 Currently, I'm focused on the Audio to Video use case - others (Text -> Audio/Video) will naturally follow.
+
+## Motivation: Responsible AI
+
+In the next few years, I suspect we'll continue to see an acceleration of artists and creatives using ML in their creation process. Hal aims to support this trend in 2 ways:
+
+1. Currently, it's fairly difficult for artists (even those with some programming background) to use ML - they need to deal with developer products/tools to set up environments, run commands/scripts they don't understand, and grapple with low-level system dependencies (e.g., CUDA) - *Hal's short term goal is to provide the best UX possible for artists to train and use generative ML models,* abstracting away the technical details of ML systems with a clean and regular interface.
+
+2. As this space matures and we see more monetization of artwork produced by ML, we'll develop more policy/ethics around how credit attribution should work (if you train a model on my data and then sell its generations, how do you determine what you owe me, if anything at all?) - Hal's been designed with lineage tracking of all artifacts (Models, Datasets, Images, Videos) so that once such policies start to emerge, we'll have machinery to enable artists using Hal to do The Right Thing without changing their workflow. Meaning, when you generated your video, you get a log of what Models/Datasets/etc. were used in the transitive closure of upstream processes that generated your video (i.e. what you did and what people whose work you used did).
+
+So Hal's strategy, if you will, is: 
+ 1) Offer the best UX
+ 2) Entice artists to use Hal for their work
+ 3) As the community settles on some codes of ethics around ML-generated art, build those policies into the tool so that people who want to do the right thing can do it at no extra cost
 
 ## Principles
 
@@ -20,8 +32,11 @@ Currently, I'm focused on the Audio to Video use case - others (Text -> Audio/Vi
 3) Colab is the only programming environment supported by Hal - Most libraries used in generative modeling have intricate (and sometimes poorly tested) inter-dependencies - instead of trying to poorly support N execution environments, we only support (and test against) the current Colab runtime.
 4) All user actions that require deep introspection of a model or inference result are done via Weights & Biases - A Hal user must also be a W&B user to accomplish anything sophisticated (model [re-]training, factorization, etc.).
 5) Hi fidelity media generation is expensive - all generative types should provide separate APIs for experimentation and export APIs that re-do computation at higher fidelity when the user is ready to export finalized work. 
+6) Every object that can be materialized to disk is an Artifact and must appear as part of the artifact lineage graph. 
 
 ## User Guide
+
+I'm continually building out Hal's API in my spare time to match the below user guide. For an uptodate working version, check out the colab badge at the top of the readme.
 
 As mentioned above, the hero use case used to build out Hal is "I have a song; I want to use a generative model to create a music video (where the video is perceived to be driven by/reacting to the audio)"
 
